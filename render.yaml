@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: livetracker-backend
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node src/index.js
+    envVars:
+      - key: PORT
+        value: 3001
+      - key: SCRAPE_INTERVAL_MS
+        value: 15000
+      - key: MAX_HISTORY_POINTS
+        value: 200

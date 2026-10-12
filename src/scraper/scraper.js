@@ -1,4 +1,4 @@
-/**
+﻿/**
  * scraper.js
  * Puppeteer scraper for 1xbet live sports.
  *
@@ -19,7 +19,8 @@
  *   3. From each matched card, extract teams, scores, overs, odds.
  */
 
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-core');
+const chromium = require('@sparticuz/chromium');
 const { EventEmitter } = require('events');
 const store = require('../store/dataStore');
 
@@ -43,12 +44,12 @@ class Scraper extends EventEmitter {
     this.loggedIn = false;
   }
 
-  // ── lifecycle ────────────────────────────────────────────────────────────────
+  // â”€â”€ lifecycle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async start() {
     if (this.running) return;
     this.running = true;
-    console.log('[Scraper] Starting…');
+    console.log('[Scraper] Startingâ€¦');
     await this._launchBrowser();
     await this._runCycle();
   }
@@ -69,19 +70,23 @@ class Scraper extends EventEmitter {
     await this._runCycle();
   }
 
-  // ── browser ──────────────────────────────────────────────────────────────────
+  // â”€â”€ browser â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async _launchBrowser() {
     try {
+      const isRender = !!process.env.RENDER;
+      const execPath = isRender
+        ? await chromium.executablePath()
+        : (process.platform === 'win32'
+            ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+            : '/usr/bin/google-chrome');
+
       this.browser = await puppeteer.launch({
-        headless: 'new',
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-gpu',
-          '--window-size=1280,900',
-        ],
+        headless: isRender ? chromium.headless : 'new',
+        executablePath: execPath,
+        args: isRender
+          ? chromium.args
+          : ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
       });
       this.page = await this.browser.newPage();
       await this.page.setViewport({ width: 1280, height: 900 });
@@ -103,13 +108,13 @@ class Scraper extends EventEmitter {
 
   async _ensureBrowser() {
     if (!this.browser || !this.browser.isConnected()) {
-      console.warn('[Scraper] Browser gone — relaunching…');
+      console.warn('[Scraper] Browser gone â€” relaunchingâ€¦');
       await this._launchBrowser();
       this.loggedIn = false;
     }
   }
 
-  // ── cycle ────────────────────────────────────────────────────────────────────
+  // â”€â”€ cycle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async _runCycle() {
     if (!this.running) return;
@@ -129,13 +134,13 @@ class Scraper extends EventEmitter {
 
     if (!username || !password ||
         username === 'your_demo_username' || password === 'your_demo_password') {
-      console.log('[Scraper] No credentials set — using public data.');
+      console.log('[Scraper] No credentials set â€” using public data.');
       this.loggedIn = true;
       return;
     }
 
     try {
-      console.log('[Scraper] Logging in…');
+      console.log('[Scraper] Logging inâ€¦');
       await this.page.goto('https://1-x-bet-india.com/en', {
         waitUntil: 'domcontentloaded', timeout: 30000,
       });
@@ -164,7 +169,7 @@ class Scraper extends EventEmitter {
     }
   }
 
-  // ── main scrape ──────────────────────────────────────────────────────────────
+  // â”€â”€ main scrape â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async _scrapeLivePage() {
     try {
@@ -175,7 +180,7 @@ class Scraper extends EventEmitter {
       return;
     }
 
-    // ── Extract all event cards from the page ──────────────────────────────────
+    // â”€â”€ Extract all event cards from the page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     //
     // We walk every DOM element looking for one whose text is a short league
     // name (like "Akluj Rural Championship").  Once found we climb up to the
@@ -228,7 +233,7 @@ class Scraper extends EventEmitter {
         if (seen.has(key)) return;
         seen.add(key);
 
-        // ── Split card into lines and numbers ─────────────────────────────────
+        // â”€â”€ Split card into lines and numbers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const rawLines = textOf(card)
           .split('\n')
           .map(s => s.trim())
@@ -258,7 +263,7 @@ class Scraper extends EventEmitter {
     console.log(`[Scraper] Found ${cards.length} cricket card(s).`);
     cards.forEach(c => console.log(`  Card: "${c.leagueName}" | lines: ${JSON.stringify(c.lines)}`));
 
-    // ── Match each card to our events and parse data ───────────────────────────
+    // â”€â”€ Match each card to our events and parse data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     for (const [eventId, keywords] of Object.entries(EVENT_KEYWORDS)) {
       const card = cards.find(c =>
@@ -271,7 +276,7 @@ class Scraper extends EventEmitter {
         continue;
       }
 
-      // ── Parse teams ────────────────────────────────────────────────────────
+      // â”€â”€ Parse teams â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       // Skip lines that are: pure UI labels, numbers, score strings, or league words
       const UI_LABELS = [
         't20', 't10', 'odi', 'team wins', '1x2', 'live', 'total',
@@ -297,15 +302,15 @@ class Scraper extends EventEmitter {
         return true;
       });
 
-      const homeTeam = teamLines[0] || '—';
-      const awayTeam = teamLines[1] || '—';
+      const homeTeam = teamLines[0] || 'â€”';
+      const awayTeam = teamLines[1] || 'â€”';
 
-      // ── Parse scores and overs ─────────────────────────────────────────────
+      // â”€â”€ Parse scores and overs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       // We look for two patterns in the lines array:
-      //   A) "runs/wkts (overs ov)"  → batting team score  e.g. "179/5 (19.5)"
-      //   B) bare integer            → completed/target    e.g. "185"
+      //   A) "runs/wkts (overs ov)"  â†’ batting team score  e.g. "179/5 (19.5)"
+      //   B) bare integer            â†’ completed/target    e.g. "185"
       let homeScore = null, awayScore = null;
-      let over = null, periodText = '—';
+      let over = null, periodText = 'â€”';
 
       for (const line of card.lines) {
         // Pattern A: "55/1 (6.4)" or "179/5 (19.5 ov)"
@@ -319,7 +324,7 @@ class Scraper extends EventEmitter {
           periodText = `Over ${ovVal}`;
           continue;
         }
-        // Pattern B: bare integer score — only if it looks like a cricket score
+        // Pattern B: bare integer score â€” only if it looks like a cricket score
         // Must be on its own line, between 0 and 500, NOT 1 or 2 digit UI numbers
         const bare = line.match(/^(\d{1,3})$/);
         if (bare) {
@@ -332,12 +337,12 @@ class Scraper extends EventEmitter {
         }
       }
 
-      // ── Parse odds ─────────────────────────────────────────────────────────
+      // â”€â”€ Parse odds â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       // Real Team Wins odds are ALWAYS decimals between 1.01 and 9.99
-      // Scores like 31, 177 are integers — never decimals
+      // Scores like 31, 177 are integers â€” never decimals
       // X (draw) is always > 10 (like 25)
       // So: filter lines that are decimals strictly between 1.01 and 9.99
-      // AND the decimal part must be present (e.g. "2.065", "1.69" — not "31")
+      // AND the decimal part must be present (e.g. "2.065", "1.69" â€” not "31")
 
       // First collect all score numbers to exclude them
       const scoreNumbers = new Set();
@@ -382,7 +387,7 @@ class Scraper extends EventEmitter {
       });
 
       console.log(
-        `[Scraper] ✓ ${eventId} | ` +
+        `[Scraper] âœ“ ${eventId} | ` +
         `${homeTeam} vs ${awayTeam} | ` +
         `score=${homeScore}/${awayScore} over=${over} | ` +
         `odds=[${homeRatio}, ${awayRatio}, ${drawRatio}]`
@@ -394,3 +399,4 @@ class Scraper extends EventEmitter {
 }
 
 module.exports = new Scraper();
+

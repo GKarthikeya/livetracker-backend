@@ -1,4 +1,4 @@
-{
+﻿{
   "name": "livetracker-backend",
   "version": "1.0.0",
   "description": "Backend scraper + WebSocket server for Live Tracker mobile app",
@@ -10,7 +10,8 @@
   "dependencies": {
     "express": "^4.18.2",
     "ws": "^8.16.0",
-    "puppeteer": "^21.11.0",
+    "puppeteer-core": "^21.11.0",
+    "@sparticuz/chromium": "^123.0.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "uuid": "^9.0.1"

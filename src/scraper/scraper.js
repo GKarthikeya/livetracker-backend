@@ -1,60 +1,43 @@
 ﻿/**
- * scraper.js - Fetches live cricket data
- * Uses 1xbet API with fallback to demo data
+ * scraper.js - Puppeteer scraper for 1xbet live cricket
+ * Works on Railway.app (has Chrome installed)
  */
 
-const https = require('https');
-const http = require('http');
+const puppeteer = require('puppeteer');
 const { EventEmitter } = require('events');
 const store = require('../store/dataStore');
 
 const SCRAPE_INTERVAL_MS = parseInt(process.env.SCRAPE_INTERVAL_MS, 10) || 20000;
+const BASE_URL = 'https://1xbet.com/en/live/Cricket';
 
-const TARGET_LEAGUES = [
-  { id: 'agra-district-womens-league', keywords: ['agra'] },
-  { id: 'akluj-rural-championship',    keywords: ['akluj'] },
-  { id: 'chandigarh-league',           keywords: ['chandigarh'] },
-];
-
-function fetchJson(url) {
-  return new Promise((resolve, reject) => {
-    const proto = url.startsWith('https') ? https : http;
-    const options = {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Linux; Android 13; CPH2731) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36',
-        'Accept': 'application/json',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Origin': 'https://1xbet.com',
-        'Referer': 'https://1xbet.com/en/live/Cricket',
-      },
-    };
-    const req = proto.get(url, options, (res) => {
-      let data = '';
-      res.on('data', c => data += c);
-      res.on('end', () => resolve({ status: res.statusCode, data }));
-    });
-    req.on('error', reject);
-    req.setTimeout(12000, () => { req.destroy(); reject(new Error('Timeout')); });
-  });
-}
+const EVENT_KEYWORDS = {
+  'agra-district-womens-league': ['agra', 'women'],
+  'akluj-rural-championship':    ['akluj'],
+  'chandigarh-league':           ['chandigarh'],
+};
 
 class Scraper extends EventEmitter {
   constructor() {
     super();
+    this.browser = null;
+    this.page    = null;
     this.running = false;
     this._timer  = null;
+    this.loggedIn = false;
   }
 
   async start() {
     if (this.running) return;
     this.running = true;
     console.log('[Scraper] Starting...');
+    await this._launchBrowser();
     await this._runCycle();
   }
 
   async stop() {
     this.running = false;
     clearTimeout(this._timer);
+    await this.browser?.close().catch(() => {});
   }
 
   async forceRefresh() {
@@ -62,119 +45,175 @@ class Scraper extends EventEmitter {
     await this._runCycle();
   }
 
+  async _launchBrowser() {
+    try {
+      this.browser = await puppeteer.launch({
+        headless: 'new',
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+          '--window-size=1280,900',
+        ],
+      });
+      this.page = await this.browser.newPage();
+      await this.page.setViewport({ width: 1280, height: 900 });
+      await this.page.setUserAgent(
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36'
+      );
+      await this.page.setRequestInterception(true);
+      this.page.on('request', req => {
+        if (['image', 'font', 'media'].includes(req.resourceType())) req.abort();
+        else req.continue();
+      });
+      console.log('[Scraper] Browser launched.');
+    } catch (err) {
+      console.error('[Scraper] Launch failed:', err.message);
+    }
+  }
+
+  async _ensureBrowser() {
+    if (!this.browser?.isConnected()) {
+      console.warn('[Scraper] Relaunching browser...');
+      await this._launchBrowser();
+      this.loggedIn = false;
+    }
+  }
+
   async _runCycle() {
     if (!this.running) return;
     try {
-      await this._scrape();
+      await this._ensureBrowser();
+      if (!this.loggedIn) await this._login();
+      await this._scrapeLivePage();
     } catch (err) {
-      console.error('[Scraper] Error:', err.message);
+      console.error('[Scraper] Cycle error:', err.message);
     }
     this._timer = setTimeout(() => this._runCycle(), SCRAPE_INTERVAL_MS);
   }
 
-  async _scrape() {
-    // Try 1xbet live cricket API
-    const apiUrls = [
-      'https://1xbet.com/LineFeed/GetGameZip?id=0&lng=en&isSubGames=true&GroupEvents=true&countryId=0&grType=0&sportAlias=Cricket',
-      'https://1xbet.com/LineFeed/Get1x2_3?sportId=1&chunkSize=50&lng=en&LiveEvents=true',
-    ];
-
-    for (const url of apiUrls) {
-      try {
-        console.log('[Scraper] Trying API...');
-        const res = await fetchJson(url);
-        if (res.status === 200 && res.data.length > 200) {
-          const found = this._parseAndUpdate(res.data);
-          if (found) {
-            console.log('[Scraper] Got live data from API!');
-            this.emit('update', store.getAllEvents());
-            return;
-          }
-        }
-      } catch (e) {
-        console.log('[Scraper] API error:', e.message);
-      }
+  async _login() {
+    const username = process.env.ONEX_USERNAME;
+    const password = process.env.ONEX_PASSWORD;
+    if (!username || username === 'your_demo_username') {
+      console.log('[Scraper] No credentials - using public data.');
+      this.loggedIn = true;
+      return;
     }
-
-    // Fallback: use realistic demo data
-    console.log('[Scraper] Using demo data');
-    this._updateDemoData();
-    this.emit('update', store.getAllEvents());
-  }
-
-  _parseAndUpdate(raw) {
     try {
-      const json = JSON.parse(raw);
-      const events = json.Value || json.data || [];
-      if (!Array.isArray(events) || events.length === 0) return false;
-
-      let found = false;
-      for (const ev of events) {
-        const name = (ev.League || ev.SN || ev.name || '').toLowerCase();
-        for (const target of TARGET_LEAGUES) {
-          if (target.keywords.every(k => name.includes(k))) {
-            const homeScore = ev.SC?.FS?.S1 != null ? String(ev.SC.FS.S1) : '';
-            const awayScore = ev.SC?.FS?.S2 != null ? String(ev.SC.FS.S2) : '';
-            const over = ev.SC?.CG != null ? String(ev.SC.CG) : '';
-            const odds = ev.E || [];
-            store.updateEvent(target.id, {
-              status: 'live',
-              teams: {
-                home: ev.O1 || ev.T1 || 'Home',
-                away: ev.O2 || ev.T2 || 'Away'
-              },
-              score: { home: homeScore, away: awayScore },
-              over,
-              period: over ? `Over ${over}` : 'In Progress',
-              ratios: {
-                home: parseFloat(odds[0]?.CE || odds[0]?.C || 0),
-                draw: parseFloat(odds[1]?.CE || odds[1]?.C || 0),
-                away: parseFloat(odds[2]?.CE || odds[2]?.C || 0),
-              }
-            });
-            console.log(`[Scraper] ✓ ${target.id} | score: ${homeScore}/${awayScore}`);
-            found = true;
-          }
-        }
-      }
-      return found;
-    } catch (e) {
-      console.log('[Scraper] Parse error:', e.message);
-      return false;
+      console.log('[Scraper] Logging in...');
+      await this.page.goto('https://1xbet.com/en', { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await this.page.waitForTimeout(2000);
+      await this.page.evaluate(() => {
+        const btn = document.querySelector('.btn-login, [class*="login"]');
+        if (btn) btn.click();
+      });
+      await this.page.waitForTimeout(1500);
+      await this.page.type('input[name="login"], input[type="text"]', username, { delay: 50 }).catch(() => {});
+      await this.page.type('input[name="password"], input[type="password"]', password, { delay: 50 }).catch(() => {});
+      await this.page.keyboard.press('Enter');
+      await this.page.waitForTimeout(3000);
+      this.loggedIn = true;
+      console.log('[Scraper] Login done.');
+    } catch (err) {
+      console.warn('[Scraper] Login failed:', err.message);
+      this.loggedIn = true;
     }
   }
 
-  _updateDemoData() {
-    // Realistic demo - scores change slightly each cycle to simulate live
-    const now = Date.now();
-    const tick = Math.floor(now / 20000); // changes every 20s
+  async _scrapeLivePage() {
+    try {
+      await this.page.goto(BASE_URL, { waitUntil: 'networkidle2', timeout: 45000 });
+      await this.page.waitForTimeout(3000);
+    } catch (err) {
+      console.warn('[Scraper] Nav error:', err.message);
+      return;
+    }
 
-    store.updateEvent('agra-district-womens-league', {
-      status: 'live',
-      teams: { home: 'AG Sports (Women)', away: 'Agra Royals (Women)' },
-      score: { home: `${53 + (tick % 8)}/0`, away: '' },
-      over: `${7 + (tick % 5)}.${tick % 6}`,
-      period: 'In Progress',
-      ratios: { home: 1.78, draw: 0, away: 2.01 }
+    const cards = await this.page.evaluate(() => {
+      const results = [];
+      const seen = new Set();
+      const LEAGUES = [['agra', 'women'], ['akluj'], ['chandigarh']];
+
+      function textOf(el) { return (el.innerText || el.textContent || '').trim(); }
+
+      document.querySelectorAll('*').forEach(el => {
+        const t = textOf(el).toLowerCase();
+        if (t.length < 4 || t.length > 120) return;
+        const matched = LEAGUES.find(kws => kws.every(k => t.includes(k)));
+        if (!matched) return;
+
+        let card = el;
+        for (let i = 0; i < 10; i++) {
+          if (!card.parentElement) break;
+          card = card.parentElement;
+          const ct = textOf(card);
+          if (ct.length > 60 && /\d+[.,]\d+/.test(ct)) break;
+        }
+
+        const key = textOf(card).substring(0, 80);
+        if (seen.has(key)) return;
+        seen.add(key);
+
+        results.push({
+          leagueText: t,
+          rawText: textOf(card).toLowerCase(),
+          lines: textOf(card).split('\n').map(s => s.trim()).filter(s => s.length > 0),
+        });
+      });
+      return results;
     });
 
-    store.updateEvent('akluj-rural-championship', {
-      status: 'soon',
-      teams: { home: '—', away: '—' },
-      score: { home: '', away: '' },
-      over: '',
-      period: 'Starting Soon',
-      ratios: { home: 0, draw: 0, away: 0 }
-    });
+    console.log(`[Scraper] Found ${cards.length} cricket card(s).`);
 
-    store.updateEvent('chandigarh-league', {
-      status: 'live',
-      teams: { home: 'Tanaji Cricketers', away: 'Shani Shignapur Sports' },
-      score: { home: `${20 + (tick % 12)}/1`, away: '' },
-      over: `${1 + (tick % 3)}.${tick % 6}`,
-      period: 'In Progress',
-      ratios: { home: 2.15, draw: 0, away: 1.685 }
-    });
+    for (const [eventId, keywords] of Object.entries(EVENT_KEYWORDS)) {
+      const card = cards.find(c => keywords.every(k => c.rawText.includes(k)));
+      if (!card) {
+        console.log(`[Scraper] Not found: ${eventId}`);
+        continue;
+      }
+
+      // Parse teams
+      const UI = ['t20','t10','odi','team wins','1x2','live','total','event in progress',
+        'agra','akluj','chandigarh','league','championship','district','womens','rural','u','+7','w1','w2','cricket'];
+      const teams = card.lines.filter(line => {
+        const l = line.toLowerCase();
+        if (/^[\d\/\.\s\(\)ov]+$/i.test(line)) return false;
+        if (line.length < 3 || /^\+\d+$/.test(line)) return false;
+        if (UI.some(w => l === w || l.startsWith(w + ' '))) return false;
+        if (!/^[A-Z]/.test(line)) return false;
+        return true;
+      });
+
+      // Parse scores
+      let homeScore = '', awayScore = '', over = '';
+      for (const line of card.lines) {
+        const m = line.match(/^(\d+(?:\/\d+)?)\s*(?:\((\d+\.\d+)(?:\s*ov)?\))?/i);
+        if (m) {
+          if (!homeScore) { homeScore = m[1]; if (m[2]) over = m[2]; }
+          else if (!awayScore) { awayScore = m[1]; }
+        }
+      }
+
+      // Parse odds
+      const odds = card.lines
+        .filter(l => /^\d{1,2}\.\d{2,4}$/.test(l.trim()))
+        .map(l => parseFloat(l))
+        .filter(v => v >= 1.01 && v < 10);
+
+      store.updateEvent(eventId, {
+        status: 'live',
+        teams: { home: teams[0] || '—', away: teams[1] || '—' },
+        score: { home: homeScore, away: awayScore },
+        over,
+        period: over ? `Over ${over}` : 'In Progress',
+        ratios: { home: odds[0] ?? null, draw: null, away: odds[1] ?? null }
+      });
+      console.log(`[Scraper] ✓ ${eventId} | ${teams[0]} vs ${teams[1]} | ${homeScore}/${awayScore} | ${over}ov`);
+    }
+
+    this.emit('update', store.getAllEvents());
   }
 }
 

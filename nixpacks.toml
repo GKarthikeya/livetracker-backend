@@ -1,8 +1,0 @@
-[phases.setup]
-nixPkgs = ["nodejs_20", "chromium", "nss", "freetype", "freetype.dev", "harfbuzz", "ca-certificates", "liberation_ttf", "fontconfig", "dbus", "xorg.libX11", "xorg.libXcomposite", "xorg.libXdamage", "xorg.libXext", "xorg.libXfixes", "xorg.libXrandr", "xorg.libXrender", "xorg.libxcb", "xorg.libxkbcommon", "expat", "glib", "nss", "cups", "atk", "at-spi2-atk", "at-spi2-core", "pango", "cairo", "alsa-lib"]
-
-[phases.build]
-cmds = ["npm install"]
-
-[start]
-cmd = "node src/index.js"

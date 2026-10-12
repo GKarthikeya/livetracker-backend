@@ -49,7 +49,6 @@ class Scraper extends EventEmitter {
     try {
       this.browser = await puppeteer.launch({
         headless: 'new',
-        executablePath: process.env.CHROMIUM_PATH || undefined,
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
@@ -219,4 +218,5 @@ class Scraper extends EventEmitter {
 }
 
 module.exports = new Scraper();
+
 

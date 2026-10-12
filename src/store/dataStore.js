@@ -1,4 +1,4 @@
-/**
+﻿/**
  * dataStore.js
  * In-memory store for live event data and ratio history time-series.
  * Acts as the single source of truth for the entire backend.
@@ -34,17 +34,17 @@ const REQUIRED_EVENTS = [
   {
     id: 'agra-district-womens-league',
     name: 'Cricket. Agra District Womens League',
-    emoji: '🏏',
+    emoji: 'ðŸ',
   },
   {
     id: 'akluj-rural-championship',
     name: 'Cricket. Akluj Rural Championship',
-    emoji: '🌾',
+    emoji: 'ðŸŒ¾',
   },
   {
     id: 'chandigarh-league',
     name: 'Cricket. Chandigarh League',
-    emoji: '🏙️',
+    emoji: 'ðŸ™ï¸',
   },
 ];
 
@@ -54,10 +54,10 @@ REQUIRED_EVENTS.forEach(({ id, name, emoji }) => {
     name,
     emoji,
     status: 'unknown',
-    teams: { home: '—', away: '—' },
+    teams: { home: 'â€”', away: 'â€”' },
     score: { home: null, away: null },
     over: null,
-    period: '—',
+    period: 'â€”',
     ratios: { home: null, away: null, draw: null },
     lastUpdated: Date.now(),
   });
@@ -139,3 +139,4 @@ module.exports = {
   markConditionFired,
   resetConditions,
 };
+

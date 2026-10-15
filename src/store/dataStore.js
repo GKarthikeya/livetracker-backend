@@ -54,7 +54,7 @@ REQUIRED_EVENTS.forEach(({ id, name, emoji }) => {
     name,
     emoji,
     status: 'unknown',
-    teams: { home: 'â€”', away: 'â€”' },
+    teams: { home: '-', away: '-' },
     score: { home: null, away: null },
     over: null,
     period: 'â€”',
